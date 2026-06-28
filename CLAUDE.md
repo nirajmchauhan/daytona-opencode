@@ -128,6 +128,5 @@ Prompts are already thin and superpowers-driven. Remaining to make it "build any
 parameterize the task/constraints/repo (`{ repoUrl, task }` input) instead of the login-specific
 `KICKOFF_PROMPT`; and replace the disabled `question` tool with a real Q&A loop that *answers* it
 (the Slack bridge). This collapses into the `CodingAgent` interface (`startBrainstorm` /
-`continueBrainstorm` / `createSpec` / `createPlan`) described in `plan.md`.
-
-`plan.md` holds the original (Codex-era) design and the success criteria / future-integration vision.
+`continueBrainstorm` / `createSpec` / `createPlan`) so Clank/Hermes can use OpenCode as the
+brainstorming/coding engine.
