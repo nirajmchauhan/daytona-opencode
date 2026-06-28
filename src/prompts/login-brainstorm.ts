@@ -1,72 +1,62 @@
 import { REPO_DIR } from '../config.js';
 
-export const LOGIN_BRAINSTORM_PROMPT = `You are working inside the repo ${REPO_DIR}.
+export const LOGIN_BRAINSTORM_PROMPT = `You are working inside the repo ${REPO_DIR} (a NestJS API).
 
-Task:
-Start a brainstorming session for adding a login flow.
+Task: add a login feature.
 
-Important:
-- Inspect README.md, AGENTS.md, and docs/architecture.md before asking questions.
-- Do not implement code.
-- Ask only blocking questions required before creating a spec.
-- Prefer specific, repo-aware questions.
-- Return output in this format:
+Follow the project's AGENTS.md. Use OpenCode's \`skill\` tool to load and follow the
+**superpowers brainstorming** skill before any code.
+
+For this first turn:
+- Inspect README.md, AGENTS.md, and src/ to understand the project.
+- Do NOT write code yet.
+- Ask only the blocking questions you need before a spec.
+- Return:
 
 ## Current Understanding
 <short summary>
 
 ## Blocking Questions
 1. <question>
-2. <question>
-3. <question>
+...
 
 ## Assumptions You Can Safely Make
-- <assumption>
-
-## Next Step
-Say what information you need from the human.`;
+- <assumption>`;
 
 export const HUMAN_ANSWERS_PROMPT = `Here are the human answers:
 
-1. Backend only for now.
-2. Use email/password login.
-3. Use cookie-based session, not bearer JWT.
-4. No SSO for this POC.
-5. Use an in-memory user store for now; do not add a real DB yet.
-6. Session expiry should be 1 hour.
-7. Include login, logout, and current-user endpoints.
-8. Add tests.
-9. Keep this POC-level, not production-grade.
+1. Backend only (NestJS), no frontend.
+2. Email/password login.
+3. Cookie-based session, not bearer JWT.
+4. No SSO.
+5. In-memory user store for now; do not add a real database.
+6. Session expiry: 1 hour.
+7. Endpoints: register, login, logout, and current-user (whoami).
+8. Add tests (unit + e2e where reasonable).
+9. POC-level, not production-grade.
 
-Continue the brainstorming session.
-If more blocking questions remain, ask them.
-If enough information is available, produce a concise feature spec.
-Do not implement code yet.`;
+I approve this scope. Continue with the superpowers workflow:
+produce a concise spec, then a plan. Do not write implementation code yet.`;
 
-export const CREATE_SPEC_PROMPT = `Create docs/features/login-flow/spec.md in the repo.
+export const CREATE_SPEC_AND_PLAN_PROMPT = `Write the spec and the plan as files in the repo:
+- docs/features/login-flow/spec.md
+- docs/features/login-flow/plan.md
 
-The spec should include:
-- Goal
-- Non-goals
-- API endpoints
-- Session behaviour
-- In-memory user store assumptions
-- Validation rules
-- Error handling
-- Test scenarios
-- Open questions, if any
+The spec must cover: goal, non-goals, API endpoints, session behaviour, in-memory user
+store assumptions, validation rules, error handling, and test scenarios.
+The plan must cover: files to change, implementation steps, test plan, and risks.
 
-Do not implement code yet.
-After writing the file, summarize what you wrote.`;
+After writing both files, summarize them. Still do not write implementation code yet.`;
 
-export const CREATE_PLAN_PROMPT = `Create docs/features/login-flow/plan.md based on the approved spec.
+export const IMPLEMENT_PROMPT = `I approve the plan. Now implement the login feature.
 
-The plan should include:
-- Files likely to change
-- Implementation steps
-- Test plan
-- Commit strategy
-- Risks
-- Human approval needed before coding
+Use the superpowers **test-driven-development** skill: write failing tests first, then the
+NestJS implementation (module, controller, service, DTOs) to make them pass, then refactor.
 
-Do not implement code yet.`;
+Requirements:
+- Implement register, login, logout, and current-user endpoints with cookie-based sessions.
+- Keep the in-memory user store.
+- Run \`npm test\` and ensure tests pass before you finish.
+- Commit your work with a clear message.
+
+When done, report: which files you created/changed, and the final test result.`;

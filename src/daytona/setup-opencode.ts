@@ -1,6 +1,5 @@
 import type { Sandbox } from '@daytona/sdk';
-import { OPENCODE_PORT, REPO_DIR } from '../config.js';
-import { SAMPLE_REPO_FILES } from '../repo/sample-repo.js';
+import { OPENCODE_PORT, REPO_DIR, REPO_URL } from '../config.js';
 
 const SERVE_SESSION = 'opencode-serve';
 
@@ -19,22 +18,21 @@ async function run(sandbox: Sandbox, command: string, cwd?: string, timeout = 30
   return res.result;
 }
 
-/** Uploads the fake target repo and initializes git inside the sandbox. */
-async function uploadSampleRepo(sandbox: Sandbox): Promise<void> {
-  console.log(`Uploading sample repo to ${REPO_DIR} ...`);
-  await run(sandbox, `mkdir -p ${REPO_DIR}/src ${REPO_DIR}/docs`);
+/** Clones the target repo and installs its dependencies inside the sandbox. */
+async function cloneRepo(sandbox: Sandbox): Promise<void> {
+  console.log(`Cloning ${REPO_URL} -> ${REPO_DIR} ...`);
+  await run(sandbox, `git clone --depth 1 ${REPO_URL} ${REPO_DIR}`, undefined, 180);
 
-  for (const [relPath, content] of Object.entries(SAMPLE_REPO_FILES)) {
-    await sandbox.fs.uploadFile(Buffer.from(content, 'utf8'), `${REPO_DIR}/${relPath}`);
-  }
+  console.log('Installing repo dependencies (npm install)...');
+  await run(sandbox, 'npm install', REPO_DIR, 600);
 
+  // Identity so the agent can commit its work.
   await run(
     sandbox,
-    'git init -q && git config user.email "clank@example.local" && git config user.name "Clank" && ' +
-      'git add . && git commit -q -m "chore: initial sample repo"',
+    'git config user.email "clank@example.local" && git config user.name "Clank"',
     REPO_DIR,
   );
-  console.log('Sample repo committed.');
+  console.log('Repo ready.');
 }
 
 /** Installs the OpenCode CLI inside the sandbox (user-local, no root required). */
@@ -49,13 +47,15 @@ async function installOpencode(sandbox: Sandbox): Promise<void> {
 async function startServer(sandbox: Sandbox): Promise<void> {
   console.log(`Starting "opencode serve" on port ${OPENCODE_PORT} ...`);
   await sandbox.process.createSession(SERVE_SESSION);
+  // Run from the repo dir so the project opencode.json (superpowers plugin) is picked up.
   await sandbox.process.executeSessionCommand(SERVE_SESSION, {
-    command: `${OPENCODE_BIN} serve --hostname 0.0.0.0 --port ${OPENCODE_PORT}`,
+    command: `cd ${REPO_DIR} && ${OPENCODE_BIN} serve --hostname 0.0.0.0 --port ${OPENCODE_PORT}`,
     runAsync: true,
   });
 
   // Poll the server from inside the sandbox until the HTTP API responds.
-  for (let attempt = 1; attempt <= 30; attempt++) {
+  // Generous: first start also installs the superpowers plugin from git.
+  for (let attempt = 1; attempt <= 60; attempt++) {
     const probe = await sandbox.process.executeCommand(
       `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${OPENCODE_PORT}/session`,
     );
@@ -66,7 +66,6 @@ async function startServer(sandbox: Sandbox): Promise<void> {
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  // Surface server logs to aid debugging before failing.
   const logs = await sandbox.process.getSessionCommandLogs(SERVE_SESSION, '').catch(() => null);
   throw new Error(`OpenCode server did not become ready.${logs ? `\nLogs:\n${JSON.stringify(logs)}` : ''}`);
 }
@@ -78,9 +77,9 @@ export type OpencodeAccess = {
   token: string;
 };
 
-/** Full sandbox bootstrap: repo + OpenCode server, returns how to reach the server. */
+/** Full sandbox bootstrap: clone repo + OpenCode server, returns how to reach the server. */
 export async function setupOpencode(sandbox: Sandbox): Promise<OpencodeAccess> {
-  await uploadSampleRepo(sandbox);
+  await cloneRepo(sandbox);
   await installOpencode(sandbox);
   await startServer(sandbox);
 
