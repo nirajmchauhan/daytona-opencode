@@ -40,6 +40,10 @@ export class BrainstormSession {
       body: {
         model: this.config.model,
         parts: [{ type: 'text', text }],
+        // Disable the interactive `question` tool: in a scripted (headless) run it
+        // blocks forever waiting for a human. Forcing text output keeps us moving.
+        // The future Slack bridge will instead ANSWER this tool rather than disable it.
+        tools: { question: false },
       },
     });
     if (res.error || !res.data) {
