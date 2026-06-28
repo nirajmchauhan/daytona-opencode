@@ -13,25 +13,13 @@ import { cleanup } from './daytona/cleanup.js';
 import { makeOpencodeClient } from './opencode/client.js';
 import { registerProviderAuth, startEventLogger, type EventLogger } from './opencode/observe.js';
 import { BrainstormSession } from './opencode/session.js';
-import {
-  LOGIN_BRAINSTORM_PROMPT,
-  HUMAN_ANSWERS_PROMPT,
-  CREATE_SPEC_AND_PLAN_PROMPT,
-  IMPLEMENT_PROMPT,
-} from './prompts/login-brainstorm.js';
+import { KICKOFF_PROMPT, CONTINUE_PROMPT, DONE_MARKER } from './prompts/login-brainstorm.js';
+
+/** Max continue-nudges before we stop waiting for the agent to finish. */
+const MAX_TURNS = 12;
 
 function banner(title: string): void {
   console.log(`\n--- ${title} ---\n`);
-}
-
-/** Best-effort: print a file the agent wrote; don't fail the run if the path differs. */
-async function showFile(session: BrainstormSession, relPath: string): Promise<void> {
-  try {
-    banner(relPath);
-    console.log(await session.readFile(relPath));
-  } catch {
-    console.log(`(could not read ${relPath} — agent may have used a different path)`);
-  }
 }
 
 /** Print the resulting repo state and run the test suite for verification. */
@@ -76,14 +64,21 @@ async function main(): Promise<void> {
       return reply;
     };
 
-    await ask('BRAINSTORM 1 (superpowers questions)', LOGIN_BRAINSTORM_PROMPT);
-    await ask('BRAINSTORM 2 (human answers + continue)', HUMAN_ANSWERS_PROMPT);
+    // Thin kickoff: superpowers owns the whole workflow. Then nudge until the agent
+    // reports completion (or we hit the turn cap), letting it run to completion across
+    // turns without scripting the content of each phase.
+    await ask('KICKOFF', KICKOFF_PROMPT);
 
-    await ask('SPEC + PLAN', CREATE_SPEC_AND_PLAN_PROMPT);
-    await showFile(session, 'docs/features/login-flow/spec.md');
-    await showFile(session, 'docs/features/login-flow/plan.md');
-
-    await ask('IMPLEMENT (TDD)', IMPLEMENT_PROMPT);
+    for (let turn = 1; turn <= MAX_TURNS; turn++) {
+      const reply = await ask(`CONTINUE ${turn}/${MAX_TURNS}`, CONTINUE_PROMPT);
+      if (new RegExp(`(^|\\s)${DONE_MARKER}(\\s|$|[.!])`).test(reply)) {
+        console.log('\nAgent reported completion.');
+        break;
+      }
+      if (turn === MAX_TURNS) {
+        console.log('\nReached turn cap without an explicit DONE — reporting current state.');
+      }
+    }
 
     await reportRepoState(sandbox);
   } finally {

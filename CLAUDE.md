@@ -61,10 +61,14 @@ agent runs there.
 5. **`opencode/session.ts`** — `BrainstormSession`: one OpenCode session id reused across all
    prompts (that's what persists context/"thread"). `prompt()` extracts text parts and surfaces
    tool calls; `dumpMessages()` / `readFile()` for transcript and file reads.
-6. **`prompts/login-brainstorm.ts`** — the 4 scripted prompts (brainstorm, answers, spec+plan,
-   implement). **Currently hardcoded to the login feature** — see "Generalizing" below.
-7. After the run, `index.ts` reports `git log` / `git diff --stat` / `npm test` from the sandbox,
-   and always writes a transcript to `runs/<sessionId>.json` (or `.events.json` fallback).
+6. **`prompts/login-brainstorm.ts`** — THIN prompts. A single `KICKOFF_PROMPT` states the task +
+   constraints + full autonomy and lets superpowers own the entire workflow (brainstorm → spec →
+   plan → TDD) and decide file locations. `index.ts` then sends `CONTINUE_PROMPT` in a loop
+   (up to `MAX_TURNS`) until the agent replies with `DONE_MARKER`. We deliberately do NOT dictate
+   spec/plan paths or micromanage phases. Still hardcoded to the login *task* — see "Generalizing".
+7. After the run, `index.ts` reports `git log` / `git diff --stat` / `npm test` from the sandbox
+   (path-agnostic, so it works wherever superpowers wrote files), and always writes a transcript
+   to `runs/<sessionId>.json` (or `.events.json` fallback).
 
 ### Key relationships to understand
 - The **orchestrator holds no agent logic** — OpenCode + the cloned repo's `AGENTS.md` /
@@ -82,10 +86,10 @@ agent runs there.
   **blocks forever in headless mode**. `session.prompt()` disables it via `body.tools: { question: false }`
   so the agent returns questions as text. The future Slack bridge should instead *answer* this
   tool rather than disable it.
-- **Two spec locations are expected, not a bug.** superpowers' brainstorming skill writes its own
-  design doc to `docs/superpowers/specs/<date>-<topic>-design.md`; the scripted prompts also ask
-  for `docs/features/login-flow/spec.md` + `plan.md`. To dedupe, rely on superpowers' own outputs
-  and stop hardcoding paths.
+- **Where specs land is up to superpowers now.** With thin prompts, the brainstorming/writing-plans
+  skills choose locations (typically `docs/superpowers/specs/<date>-<topic>-design.md`). Don't
+  reintroduce hardcoded paths — reporting is via `git diff`, which doesn't care. (An earlier
+  version dictated `docs/features/login-flow/...`, which caused confusing duplicate spec files.)
 - **HTTP timeouts**: `index.ts` sets a finite 20-min undici timeout (`headersTimeout`/`bodyTimeout`).
   Do NOT set these to `0` — an infinite timeout turns a hung model into an infinite hang.
 - **Model choice matters a lot.** superpowers depends on reliable tool-calling. Weak models
@@ -120,11 +124,10 @@ agent runs there.
 
 ## Generalizing (next steps, currently NOT done)
 
-To make it "build anything": parameterize the task (replace the 4 fixed prompts + canned answers
-with a `{ repoUrl, task }` input), replace canned answers with a real Q&A loop that *answers* the
-`question` tool (the Slack bridge), and drop the hardcoded `showFile` paths in favor of `git diff`.
-This collapses into the `CodingAgent` interface (`startBrainstorm` / `continueBrainstorm` /
-`createSpec` / `createPlan`) described in `plan.md`. Consider splitting the single large IMPLEMENT
-turn into scaffold → tests → implement → run for robustness.
+Prompts are already thin and superpowers-driven. Remaining to make it "build anything":
+parameterize the task/constraints/repo (`{ repoUrl, task }` input) instead of the login-specific
+`KICKOFF_PROMPT`; and replace the disabled `question` tool with a real Q&A loop that *answers* it
+(the Slack bridge). This collapses into the `CodingAgent` interface (`startBrainstorm` /
+`continueBrainstorm` / `createSpec` / `createPlan`) described in `plan.md`.
 
 `plan.md` holds the original (Codex-era) design and the success criteria / future-integration vision.
