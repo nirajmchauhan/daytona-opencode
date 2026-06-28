@@ -24,28 +24,27 @@ function parseModel(spec: string): { providerID: string; modelID: string } {
 }
 
 export function loadConfig() {
-  const modelSpec = process.env.SANDBOX_MODEL ?? 'openai/gpt-4o';
+  const modelSpec = process.env.SANDBOX_MODEL ?? 'openrouter/anthropic/claude-3.5-sonnet';
   const model = parseModel(modelSpec);
 
-  // Provider key that gets injected into the sandbox so OpenCode can authenticate.
-  // OpenCode reads OPENAI_API_KEY / ANTHROPIC_API_KEY from the environment.
-  const sandboxEnv: Record<string, string> = { NODE_ENV: 'development' };
-  if (process.env.SANDBOX_OPENAI_API_KEY) {
-    sandboxEnv.OPENAI_API_KEY = process.env.SANDBOX_OPENAI_API_KEY;
-  }
-  if (process.env.SANDBOX_ANTHROPIC_API_KEY) {
-    sandboxEnv.ANTHROPIC_API_KEY = process.env.SANDBOX_ANTHROPIC_API_KEY;
-  }
-
-  const providerKeyPresent =
-    (model.providerID === 'openai' && !!sandboxEnv.OPENAI_API_KEY) ||
-    (model.providerID === 'anthropic' && !!sandboxEnv.ANTHROPIC_API_KEY);
-  if (!providerKeyPresent) {
+  // The provider key is injected into the sandbox so OpenCode can authenticate.
+  // OpenCode reads <PROVIDER>_API_KEY from the environment (e.g. OPENROUTER_API_KEY,
+  // OPENAI_API_KEY, ANTHROPIC_API_KEY). We read it from SANDBOX_<PROVIDER>_API_KEY
+  // locally and forward it under the name OpenCode expects.
+  const providerUpper = model.providerID.toUpperCase();
+  const localKeyName = `SANDBOX_${providerUpper}_API_KEY`;
+  const providerKey = process.env[localKeyName];
+  if (!providerKey) {
     throw new Error(
-      `No API key found for provider "${model.providerID}". ` +
-        `Set SANDBOX_${model.providerID.toUpperCase()}_API_KEY in .env.`,
+      `No API key for provider "${model.providerID}". Set ${localKeyName} in .env ` +
+        `(SANDBOX_MODEL is "${modelSpec}").`,
     );
   }
+
+  const sandboxEnv: Record<string, string> = {
+    NODE_ENV: 'development',
+    [`${providerUpper}_API_KEY`]: providerKey,
+  };
 
   return {
     daytonaApiKey: required('DAYTONA_API_KEY'),

@@ -55,9 +55,11 @@ cp .env.example .env
 Env vars (see `.env.example`):
 
 - `DAYTONA_API_KEY` — local orchestrator auth to Daytona.
-- `SANDBOX_OPENAI_API_KEY` — injected into the sandbox; OpenCode reads `OPENAI_API_KEY`.
-  (Use `SANDBOX_ANTHROPIC_API_KEY` if you switch the model to `anthropic/*`.)
-- `SANDBOX_MODEL` — `provider/model`, default `openai/gpt-4o`.
+- `SANDBOX_<PROVIDER>_API_KEY` — injected into the sandbox as `<PROVIDER>_API_KEY` for OpenCode.
+  Default uses OpenRouter, so set `SANDBOX_OPENROUTER_API_KEY`. The name must match the
+  provider in `SANDBOX_MODEL` (e.g. `openai` → `SANDBOX_OPENAI_API_KEY`).
+- `SANDBOX_MODEL` — default `openrouter/anthropic/claude-3.5-sonnet`. For OpenRouter the
+  form is `openrouter/<provider>/<model>`.
 - `AUTO_DELETE_SANDBOX` — `true` (default) deletes the sandbox after the run.
 
 ## Run
