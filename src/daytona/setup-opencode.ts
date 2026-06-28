@@ -80,27 +80,21 @@ async function startServer(sandbox: Sandbox): Promise<void> {
 async function verifySuperpowers(sandbox: Sandbox): Promise<void> {
   console.log('\nVerifying superpowers plugin/skills...');
 
-  // Filesystem: superpowers skills register under the opencode config dir.
+  // The plugin is installed by OpenCode at startup; its exact on-disk location varies
+  // (cache/data dirs), so search broadly rather than assuming ~/.config/opencode/skills.
   const fsCheck = await sandbox.process.executeCommand(
-    'echo "[skills dir]"; ls -1 $HOME/.config/opencode/skills 2>/dev/null; ' +
-      'echo "[superpowers traces]"; find $HOME/.config/opencode ' +
-      `${REPO_DIR}/.opencode $HOME/.local/share/opencode -iname "*superpower*" 2>/dev/null | head -20`,
+    `find $HOME ${REPO_DIR}/.opencode -maxdepth 7 -iname '*superpower*' ` +
+      "-not -path '*/.git/*' 2>/dev/null | head -10",
   );
-  console.log(fsCheck.result.trim() || '(no skill/plugin files found)');
-
-  // Server logs: plugin load/registration shows up at startup.
-  if (serveCmdId) {
-    const logs = await sandbox.process
-      .getSessionCommandLogs(SERVE_SESSION, serveCmdId)
-      .catch(() => null);
-    const text = logs ? `${logs.stdout ?? ''}\n${logs.stderr ?? ''}` : '';
-    const relevant = text
-      .split('\n')
-      .filter((l) => /plugin|superpower|skill/i.test(l))
-      .slice(0, 20)
-      .join('\n');
-    console.log('[serve log matches]');
-    console.log(relevant || '(no plugin/skill lines in serve log)');
+  const traces = fsCheck.result.trim();
+  if (traces) {
+    console.log('superpowers plugin found on disk:');
+    console.log(traces);
+  } else {
+    console.log(
+      'superpowers not located on disk (install path varies). This is NOT proof it is off — ' +
+        'runtime confirmation is the `· tool skill` lines during prompts.',
+    );
   }
 }
 
