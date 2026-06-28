@@ -11,6 +11,7 @@ import { createSandbox } from './daytona/create-sandbox.js';
 import { setupOpencode } from './daytona/setup-opencode.js';
 import { cleanup } from './daytona/cleanup.js';
 import { makeOpencodeClient } from './opencode/client.js';
+import { registerProviderAuth, startEventLogger } from './opencode/observe.js';
 import { BrainstormSession } from './opencode/session.js';
 import {
   LOGIN_BRAINSTORM_PROMPT,
@@ -56,10 +57,13 @@ async function main(): Promise<void> {
 
   const sandbox = await createSandbox(config);
   let session: BrainstormSession | undefined;
+  let stopEvents: (() => void) | undefined;
 
   try {
     const access = await setupOpencode(sandbox);
     const client = makeOpencodeClient(access);
+    await registerProviderAuth(client, config);
+    stopEvents = startEventLogger(client);
     session = await BrainstormSession.start(client, config);
 
     banner('BRAINSTORM 1 (superpowers questions)');
@@ -78,6 +82,7 @@ async function main(): Promise<void> {
 
     await reportRepoState(sandbox);
   } finally {
+    stopEvents?.();
     // Always save the full raw session transcript (every message + tool call),
     // even if the run errored mid-way — this is the audit log of what the agent did.
     if (session) {

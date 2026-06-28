@@ -56,6 +56,10 @@ export function loadConfig() {
     model,
     modelSpec,
     sandboxEnv,
+    // Provider credentials, so the orchestrator can register them with OpenCode
+    // via auth.set (env-var pickup alone is unreliable).
+    providerId: model.providerID,
+    providerKey,
     autoDeleteSandbox: (process.env.AUTO_DELETE_SANDBOX ?? 'true') === 'true',
   };
 }
