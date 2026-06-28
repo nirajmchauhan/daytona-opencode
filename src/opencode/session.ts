@@ -1,6 +1,13 @@
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import { REPO_DIR, type Config } from '../config.js';
 
+/** Builds a useful error string from a hey-api result (status + body). */
+function describe(res: { error?: unknown; response?: Response }): string {
+  const status = res.response ? `HTTP ${res.response.status} ${res.response.statusText}` : 'no response';
+  const body = res.error && Object.keys(res.error as object).length ? JSON.stringify(res.error) : '(empty body)';
+  return `${status} — ${body}`;
+}
+
 /**
  * Wraps a single OpenCode session bound to the sample repo directory.
  * Every prompt reuses the same session id, so context persists across turns.
@@ -19,7 +26,7 @@ export class BrainstormSession {
       body: { title: 'login-flow brainstorm' },
     });
     if (res.error || !res.data) {
-      throw new Error(`Failed to create OpenCode session: ${JSON.stringify(res.error)}`);
+      throw new Error(`Failed to create OpenCode session: ${describe(res)}`);
     }
     console.log(`OpenCode session created: ${res.data.id}`);
     return new BrainstormSession(client, config, res.data.id);
@@ -36,7 +43,7 @@ export class BrainstormSession {
       },
     });
     if (res.error || !res.data) {
-      throw new Error(`Prompt failed: ${JSON.stringify(res.error)}`);
+      throw new Error(`Prompt failed: ${describe(res)}`);
     }
 
     // Surface tool calls so skill usage (e.g. the superpowers `skill` tool) is visible.
@@ -65,7 +72,7 @@ export class BrainstormSession {
       query: { directory: REPO_DIR },
     });
     if (res.error || !res.data) {
-      throw new Error(`Failed to read session messages: ${JSON.stringify(res.error)}`);
+      throw new Error(`Failed to read session messages: ${describe(res)}`);
     }
     return res.data;
   }
@@ -76,7 +83,7 @@ export class BrainstormSession {
       query: { directory: REPO_DIR, path: relPath },
     });
     if (res.error || !res.data) {
-      throw new Error(`Failed to read ${relPath}: ${JSON.stringify(res.error)}`);
+      throw new Error(`Failed to read ${relPath}: ${describe(res)}`);
     }
     return res.data.content;
   }

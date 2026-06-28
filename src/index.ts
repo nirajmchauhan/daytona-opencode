@@ -11,7 +11,7 @@ import { createSandbox } from './daytona/create-sandbox.js';
 import { setupOpencode } from './daytona/setup-opencode.js';
 import { cleanup } from './daytona/cleanup.js';
 import { makeOpencodeClient } from './opencode/client.js';
-import { registerProviderAuth, startEventLogger } from './opencode/observe.js';
+import { registerProviderAuth, startEventLogger, type EventLogger } from './opencode/observe.js';
 import { BrainstormSession } from './opencode/session.js';
 import {
   LOGIN_BRAINSTORM_PROMPT,
@@ -57,42 +57,51 @@ async function main(): Promise<void> {
 
   const sandbox = await createSandbox(config);
   let session: BrainstormSession | undefined;
-  let stopEvents: (() => void) | undefined;
+  let logger: EventLogger | undefined;
 
   try {
     const access = await setupOpencode(sandbox);
     const client = makeOpencodeClient(access);
     await registerProviderAuth(client, config);
-    stopEvents = startEventLogger(client);
+    logger = startEventLogger(client);
     session = await BrainstormSession.start(client, config);
 
-    banner('BRAINSTORM 1 (superpowers questions)');
-    console.log(await session.prompt(LOGIN_BRAINSTORM_PROMPT));
+    // Echo what we send (so the human side of the conversation is visible too),
+    // then print the assistant reply.
+    const ask = async (label: string, prompt: string): Promise<string> => {
+      banner(label);
+      console.log(`>>> SENT:\n${prompt}\n\n<<< REPLY:`);
+      const reply = await session!.prompt(prompt);
+      console.log(reply);
+      return reply;
+    };
 
-    banner('BRAINSTORM 2 (human answers + continue)');
-    console.log(await session.prompt(HUMAN_ANSWERS_PROMPT));
+    await ask('BRAINSTORM 1 (superpowers questions)', LOGIN_BRAINSTORM_PROMPT);
+    await ask('BRAINSTORM 2 (human answers + continue)', HUMAN_ANSWERS_PROMPT);
 
-    banner('SPEC + PLAN');
-    console.log(await session.prompt(CREATE_SPEC_AND_PLAN_PROMPT));
+    await ask('SPEC + PLAN', CREATE_SPEC_AND_PLAN_PROMPT);
     await showFile(session, 'docs/features/login-flow/spec.md');
     await showFile(session, 'docs/features/login-flow/plan.md');
 
-    banner('IMPLEMENT (TDD)');
-    console.log(await session.prompt(IMPLEMENT_PROMPT));
+    await ask('IMPLEMENT (TDD)', IMPLEMENT_PROMPT);
 
     await reportRepoState(sandbox);
   } finally {
-    stopEvents?.();
-    // Always save the full raw session transcript (every message + tool call),
-    // even if the run errored mid-way — this is the audit log of what the agent did.
+    logger?.stop();
+    // Always save a transcript, even if the run errored mid-way. Prefer the
+    // server-side message history; if that fails (e.g. server died), fall back
+    // to the raw events captured locally by the logger.
     if (session) {
+      await mkdir('runs', { recursive: true });
+      const path = `runs/${session.id}.json`;
       try {
-        await mkdir('runs', { recursive: true });
-        const path = `runs/${session.id}.json`;
         await writeFile(path, JSON.stringify(await session.dumpMessages(), null, 2), 'utf8');
         console.log(`\nRaw session transcript saved: ${path}`);
       } catch (e) {
-        console.error('Could not save session transcript:', e);
+        console.error('Server-side dump failed; saving captured events instead:', e);
+        const fallback = `runs/${session.id}.events.json`;
+        await writeFile(fallback, JSON.stringify(logger?.events ?? [], null, 2), 'utf8').catch(() => {});
+        console.log(`Event transcript saved: ${fallback}`);
       }
     }
     await cleanup(sandbox, config.autoDeleteSandbox);
