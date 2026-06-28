@@ -4,6 +4,12 @@ import { SAMPLE_REPO_FILES } from '../repo/sample-repo.js';
 
 const SERVE_SESSION = 'opencode-serve';
 
+/**
+ * OpenCode binary path. The official install script drops it under $HOME/.opencode/bin,
+ * which is writable by the sandbox user (global npm -g hits EACCES on the nvm dir).
+ */
+const OPENCODE_BIN = '$HOME/.opencode/bin/opencode';
+
 /** Runs a shell command in the sandbox and throws if it exits non-zero. */
 async function run(sandbox: Sandbox, command: string, cwd?: string, timeout = 300): Promise<string> {
   const res = await sandbox.process.executeCommand(command, cwd, undefined, timeout);
@@ -31,11 +37,11 @@ async function uploadSampleRepo(sandbox: Sandbox): Promise<void> {
   console.log('Sample repo committed.');
 }
 
-/** Installs the OpenCode CLI globally inside the sandbox. */
+/** Installs the OpenCode CLI inside the sandbox (user-local, no root required). */
 async function installOpencode(sandbox: Sandbox): Promise<void> {
   console.log('Installing OpenCode CLI (this can take a minute)...');
-  await run(sandbox, 'npm install -g opencode-ai@latest', undefined, 420);
-  const version = (await run(sandbox, 'opencode --version')).trim();
+  await run(sandbox, 'curl -fsSL https://opencode.ai/install | bash', undefined, 420);
+  const version = (await run(sandbox, `${OPENCODE_BIN} --version`)).trim();
   console.log(`OpenCode installed: ${version}`);
 }
 
@@ -44,7 +50,7 @@ async function startServer(sandbox: Sandbox): Promise<void> {
   console.log(`Starting "opencode serve" on port ${OPENCODE_PORT} ...`);
   await sandbox.process.createSession(SERVE_SESSION);
   await sandbox.process.executeSessionCommand(SERVE_SESSION, {
-    command: `opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT}`,
+    command: `${OPENCODE_BIN} serve --hostname 0.0.0.0 --port ${OPENCODE_PORT}`,
     runAsync: true,
   });
 
