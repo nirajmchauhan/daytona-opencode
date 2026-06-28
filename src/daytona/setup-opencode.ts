@@ -43,15 +43,18 @@ async function installOpencode(sandbox: Sandbox): Promise<void> {
   console.log(`OpenCode installed: ${version}`);
 }
 
+let serveCmdId: string | undefined;
+
 /** Starts `opencode serve` as a background process and waits until it answers. */
 async function startServer(sandbox: Sandbox): Promise<void> {
   console.log(`Starting "opencode serve" on port ${OPENCODE_PORT} ...`);
   await sandbox.process.createSession(SERVE_SESSION);
   // Run from the repo dir so the project opencode.json (superpowers plugin) is picked up.
-  await sandbox.process.executeSessionCommand(SERVE_SESSION, {
+  const started = await sandbox.process.executeSessionCommand(SERVE_SESSION, {
     command: `cd ${REPO_DIR} && ${OPENCODE_BIN} serve --hostname 0.0.0.0 --port ${OPENCODE_PORT}`,
     runAsync: true,
   });
+  serveCmdId = started.cmdId;
 
   // Poll the server from inside the sandbox until the HTTP API responds.
   // Generous: first start also installs the superpowers plugin from git.
@@ -70,6 +73,37 @@ async function startServer(sandbox: Sandbox): Promise<void> {
   throw new Error(`OpenCode server did not become ready.${logs ? `\nLogs:\n${JSON.stringify(logs)}` : ''}`);
 }
 
+/**
+ * Checks whether the superpowers plugin/skills actually loaded. Prints findings;
+ * does not throw, so you can decide whether the run is meaningful.
+ */
+async function verifySuperpowers(sandbox: Sandbox): Promise<void> {
+  console.log('\nVerifying superpowers plugin/skills...');
+
+  // Filesystem: superpowers skills register under the opencode config dir.
+  const fsCheck = await sandbox.process.executeCommand(
+    'echo "[skills dir]"; ls -1 $HOME/.config/opencode/skills 2>/dev/null; ' +
+      'echo "[superpowers traces]"; find $HOME/.config/opencode ' +
+      `${REPO_DIR}/.opencode $HOME/.local/share/opencode -iname "*superpower*" 2>/dev/null | head -20`,
+  );
+  console.log(fsCheck.result.trim() || '(no skill/plugin files found)');
+
+  // Server logs: plugin load/registration shows up at startup.
+  if (serveCmdId) {
+    const logs = await sandbox.process
+      .getSessionCommandLogs(SERVE_SESSION, serveCmdId)
+      .catch(() => null);
+    const text = logs ? `${logs.stdout ?? ''}\n${logs.stderr ?? ''}` : '';
+    const relevant = text
+      .split('\n')
+      .filter((l) => /plugin|superpower|skill/i.test(l))
+      .slice(0, 20)
+      .join('\n');
+    console.log('[serve log matches]');
+    console.log(relevant || '(no plugin/skill lines in serve log)');
+  }
+}
+
 export type OpencodeAccess = {
   /** Public preview URL for the OpenCode server. */
   url: string;
@@ -82,6 +116,7 @@ export async function setupOpencode(sandbox: Sandbox): Promise<OpencodeAccess> {
   await cloneRepo(sandbox);
   await installOpencode(sandbox);
   await startServer(sandbox);
+  await verifySuperpowers(sandbox);
 
   const preview = await sandbox.getPreviewLink(OPENCODE_PORT);
   console.log(`OpenCode reachable via preview URL: ${preview.url}`);
