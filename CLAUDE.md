@@ -17,9 +17,16 @@ because OpenCode's server+SDK model is far less brittle than driving a CLI).
 ```bash
 npm install            # deps
 cp .env.example .env   # then fill DAYTONA_API_KEY + SANDBOX_OPENROUTER_API_KEY
-npm start              # run the full orchestration end-to-end (tsx src/index.ts)
+npm start              # run with defaults (login feature on the sample repo)
+npm start -- --repo <url> --task "..." --mode implement --branch feat/x
 npm run typecheck      # tsc --noEmit — ALWAYS run before committing; there is no test suite here
 ```
+
+The run is parameterized by `RunInput` (`src/run-input.ts`), built from CLI flags → env → defaults:
+`repo`/`REPO_URL`, `task`/`TASK`, `mode`/`MODE` (`brainstorm` | `implement` | `fix`),
+`branch`/`BRANCH_NAME` (auto `clank/<mode>-<slug>`), `base`/`BASE_BRANCH`,
+`constraints`/`CONSTRAINTS`, `max-turns`/`MAX_TURNS`. `repoDir` (`/home/daytona/<repo-name>`) is
+derived from the URL. Defaults reproduce the original login POC.
 
 There are no unit tests in this repo — verification is the end-to-end `npm start` run plus
 `npm run typecheck`. The *target* repo (cloned into the sandbox) has its own tests that the
@@ -46,7 +53,8 @@ agent runs there.
    `<PROVIDER>_API_KEY`.
 2. **`daytona/setup-opencode.ts`** — the heavy lifting, all over `sandbox.process.executeCommand`
    and a background session command:
-   - `git clone` the target repo into `REPO_DIR` (`/home/daytona/nest-js-tmp`) + `npm install`.
+   - `git clone` `input.repoUrl` into `input.repoDir`, `git checkout -b input.branchName`,
+     then `npm install`.
    - Install OpenCode via its official script to `$HOME/.opencode/bin` (NOT `npm i -g` — that
      hits EACCES on the nvm global dir).
    - Start `opencode serve --hostname 0.0.0.0 --port 4096` **from the repo dir** as a background
@@ -61,14 +69,15 @@ agent runs there.
 5. **`opencode/session.ts`** — `BrainstormSession`: one OpenCode session id reused across all
    prompts (that's what persists context/"thread"). `prompt()` extracts text parts and surfaces
    tool calls; `dumpMessages()` / `readFile()` for transcript and file reads.
-6. **`prompts/login-brainstorm.ts`** — THIN prompts. A single `KICKOFF_PROMPT` states the task +
-   constraints + full autonomy and lets superpowers own the entire workflow (brainstorm → spec →
-   plan → TDD) and decide file locations. `index.ts` then sends `CONTINUE_PROMPT` in a loop
-   (up to `MAX_TURNS`) until the agent replies with `DONE_MARKER`. We deliberately do NOT dictate
-   spec/plan paths or micromanage phases. Still hardcoded to the login *task* — see "Generalizing".
-7. After the run, `index.ts` reports `git log` / `git diff --stat` / `npm test` from the sandbox
-   (path-agnostic, so it works wherever superpowers wrote files), and always writes a transcript
-   to `runs/<sessionId>.json` (or `.events.json` fallback).
+6. **`prompts/build-prompts.ts`** — THIN, mode-aware prompts. `buildKickoffPrompt(input)` states
+   the task + constraints + full autonomy and lets superpowers own the workflow and file locations;
+   `MODE_INSTRUCTIONS` adjusts depth per mode (`brainstorm` stops at spec/plan, `implement` does
+   full TDD, `fix` uses systematic-debugging). `index.ts` then loops `buildContinuePrompt(input)`
+   (up to `input.maxTurns`) until the agent replies `DONE_MARKER`. We deliberately do NOT dictate
+   spec/plan paths or micromanage phases.
+7. After the run, `index.ts` reports `git log` / `git diff --stat` (vs the commit captured before
+   the agent ran) and — for `implement`/`fix` — `npm test`, all path-agnostic. Always writes a
+   transcript to `runs/<sessionId>.json` (or `.events.json` fallback).
 
 ### Key relationships to understand
 - The **orchestrator holds no agent logic** — OpenCode + the cloned repo's `AGENTS.md` /
@@ -122,11 +131,14 @@ agent runs there.
   ```
   Reading `/session/<ID>/message` shows what a pending `question`/tool is waiting on.
 
-## Generalizing (next steps, currently NOT done)
+## Generalizing (next steps)
 
-Prompts are already thin and superpowers-driven. Remaining to make it "build anything":
-parameterize the task/constraints/repo (`{ repoUrl, task }` input) instead of the login-specific
-`KICKOFF_PROMPT`; and replace the disabled `question` tool with a real Q&A loop that *answers* it
-(the Slack bridge). This collapses into the `CodingAgent` interface (`startBrainstorm` /
-`continueBrainstorm` / `createSpec` / `createPlan`) so Clank/Hermes can use OpenCode as the
-brainstorming/coding engine.
+Done: thin superpowers-driven prompts and a parameterized `RunInput` (`{ repoUrl, task, mode,
+branchName, ... }`). Remaining to make it production-grade:
+- **Private repos** — clone currently assumes public; inject a git token into the sandbox.
+- **Deliver output** — push the working branch / open a PR (it's already isolated on `branchName`).
+- **Interactive Q&A** — replace the disabled `question` tool with a loop that *answers* it (the
+  Slack bridge), so brainstorm mode can be truly conversational.
+
+This collapses into the `CodingAgent` interface (`startBrainstorm` / `continueBrainstorm` /
+`createSpec` / `createPlan`) so Clank/Hermes can use OpenCode as the brainstorming/coding engine.

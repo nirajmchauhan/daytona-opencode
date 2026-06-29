@@ -1,11 +1,5 @@
 import 'dotenv/config';
 
-/** Public GitHub repo the sandbox clones and OpenCode builds in. */
-export const REPO_URL = 'https://github.com/nirajmchauhan/nest-js-tmp.git';
-
-/** Where the cloned repo lives inside the sandbox. OpenCode operates on this directory. */
-export const REPO_DIR = '/home/daytona/nest-js-tmp';
-
 /** Port OpenCode's HTTP server listens on inside the sandbox. */
 export const OPENCODE_PORT = 4096;
 

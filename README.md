@@ -34,17 +34,18 @@ it over HTTP — far less brittle than screen-scraping a CLI.
 ```
 src/
   index.ts                 # orchestration: kickoff + continue-until-DONE loop, reporting
+  run-input.ts             # RunInput type + parser (CLI flags / env / defaults)
   config.ts                # env loading, provider/model parsing, constants
   daytona/
     create-sandbox.ts      # daytona.create(...)
-    setup-opencode.ts      # clone repo, install + serve OpenCode, verify superpowers, expose port
+    setup-opencode.ts      # clone repo + branch, install + serve OpenCode, verify superpowers
     cleanup.ts             # optional sandbox delete
   opencode/
     client.ts              # createOpencodeClient against the preview URL
     observe.ts             # registerProviderAuth (auth.set) + live SSE event logger
     session.ts             # BrainstormSession: prompt / dumpMessages / readFile
   prompts/
-    login-brainstorm.ts    # thin KICKOFF + CONTINUE prompts
+    build-prompts.ts       # thin, mode-aware KICKOFF + CONTINUE prompts
 ```
 
 ## Setup
@@ -70,10 +71,29 @@ Env vars (see `.env.example`):
 
 ## Run
 
+The run is parameterized via CLI flags (or env vars); defaults reproduce the original login POC.
+
 ```bash
-npm start          # full end-to-end run
-npm run typecheck  # tsc --noEmit
+npm start                                            # defaults: login feature on the sample repo
+npm start -- --repo <git-url> --task "..." --mode implement --branch feat/x
+npm run typecheck                                    # tsc --noEmit
 ```
+
+`RunInput` (see `src/run-input.ts`):
+
+| Flag (`--`) / env | Meaning | Default |
+|---|---|---|
+| `repo` / `REPO_URL` | Git URL to clone (public) | sample nest-js-tmp repo |
+| `task` / `TASK` | What to do, in plain language | "Add a login feature to the API." |
+| `mode` / `MODE` | `brainstorm` (spec+plan only), `implement` (full TDD), `fix` (debug→fix) | `implement` |
+| `branch` / `BRANCH_NAME` | Working branch (always created) | `clank/<mode>-<task-slug>` |
+| `base` / `BASE_BRANCH` | Branch to clone from | repo default |
+| `constraints` / `CONSTRAINTS` | Extra constraints appended to the task | login defaults only for the default task |
+| `max-turns` / `MAX_TURNS` | Continue-loop cap | 12 |
+
+The orchestrator clones the repo, checks out the working branch, hands the task to superpowers,
+loops until `DONE`, then reports `git diff --stat` (vs the pre-run commit) and — for
+`implement`/`fix` — `npm test`.
 
 The console shows each turn's prompt and reply, live tool calls (`· tool skill …` confirms
 superpowers fired), file edits, and finally `git diff --stat` + `npm test`. A full raw transcript
@@ -93,11 +113,12 @@ tail -f ~/.local/share/opencode/log/<latest>.log
 ## Status & next steps
 
 Working: sandbox bootstrap, OpenCode server, superpowers plugin load, persistent multi-turn
-context, and a superpowers-driven brainstorm → spec → plan → TDD build.
+context, a superpowers-driven brainstorm → spec → plan → TDD build, and a parameterized
+`{ repoUrl, task, mode, branch }` run input.
 
-To make it build *anything*: parameterize the task/repo (replace the login-specific kickoff with a
-`{ repoUrl, task }` input), and replace the disabled interactive `question` tool with a real Q&A
-loop that *answers* it (the future Slack bridge), so OpenCode can become the engine behind a
-`CodingAgent` interface (`startBrainstorm` / `continueBrainstorm` / `createSpec` / `createPlan`).
+Remaining toward a real `CodingAgent`: private-repo auth (a git token in the sandbox), pushing the
+working branch / opening a PR, and replacing the disabled interactive `question` tool with a real
+Q&A loop that *answers* it (the future Slack bridge) — so OpenCode becomes the engine behind
+`startBrainstorm` / `continueBrainstorm` / `createSpec` / `createPlan`.
 
 See `CLAUDE.md` for architecture details and gotchas.

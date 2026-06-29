@@ -1,5 +1,6 @@
 import type { Sandbox } from '@daytona/sdk';
-import { OPENCODE_PORT, REPO_DIR, REPO_URL } from '../config.js';
+import { OPENCODE_PORT } from '../config.js';
+import type { RunInput } from '../run-input.js';
 
 const SERVE_SESSION = 'opencode-serve';
 
@@ -18,20 +19,24 @@ async function run(sandbox: Sandbox, command: string, cwd?: string, timeout = 30
   return res.result;
 }
 
-/** Clones the target repo and installs its dependencies inside the sandbox. */
-async function cloneRepo(sandbox: Sandbox): Promise<void> {
-  console.log(`Cloning ${REPO_URL} -> ${REPO_DIR} ...`);
-  await run(sandbox, `git clone --depth 1 ${REPO_URL} ${REPO_DIR}`, undefined, 180);
+/** Clones the target repo, checks out a working branch, and installs dependencies. */
+async function cloneRepo(sandbox: Sandbox, input: RunInput): Promise<void> {
+  const { repoUrl, repoDir, baseBranch, branchName } = input;
+  console.log(`Cloning ${repoUrl} -> ${repoDir} ...`);
+  const branchArg = baseBranch ? `--branch ${baseBranch} ` : '';
+  await run(sandbox, `git clone --depth 1 ${branchArg}${repoUrl} ${repoDir}`, undefined, 180);
 
-  console.log('Installing repo dependencies (npm install)...');
-  await run(sandbox, 'npm install', REPO_DIR, 600);
-
-  // Identity so the agent can commit its work.
+  // Identity so the agent can commit its work, then an isolated working branch.
   await run(
     sandbox,
     'git config user.email "clank@example.local" && git config user.name "Clank"',
-    REPO_DIR,
+    repoDir,
   );
+  await run(sandbox, `git checkout -b ${branchName}`, repoDir);
+  console.log(`Working branch: ${branchName}`);
+
+  console.log('Installing repo dependencies (npm install)...');
+  await run(sandbox, 'npm install', repoDir, 600);
   console.log('Repo ready.');
 }
 
@@ -46,12 +51,12 @@ async function installOpencode(sandbox: Sandbox): Promise<void> {
 let serveCmdId: string | undefined;
 
 /** Starts `opencode serve` as a background process and waits until it answers. */
-async function startServer(sandbox: Sandbox): Promise<void> {
+async function startServer(sandbox: Sandbox, repoDir: string): Promise<void> {
   console.log(`Starting "opencode serve" on port ${OPENCODE_PORT} ...`);
   await sandbox.process.createSession(SERVE_SESSION);
   // Run from the repo dir so the project opencode.json (superpowers plugin) is picked up.
   const started = await sandbox.process.executeSessionCommand(SERVE_SESSION, {
-    command: `cd ${REPO_DIR} && ${OPENCODE_BIN} serve --hostname 0.0.0.0 --port ${OPENCODE_PORT}`,
+    command: `cd ${repoDir} && ${OPENCODE_BIN} serve --hostname 0.0.0.0 --port ${OPENCODE_PORT}`,
     runAsync: true,
   });
   serveCmdId = started.cmdId;
@@ -77,13 +82,13 @@ async function startServer(sandbox: Sandbox): Promise<void> {
  * Checks whether the superpowers plugin/skills actually loaded. Prints findings;
  * does not throw, so you can decide whether the run is meaningful.
  */
-async function verifySuperpowers(sandbox: Sandbox): Promise<void> {
+async function verifySuperpowers(sandbox: Sandbox, repoDir: string): Promise<void> {
   console.log('\nVerifying superpowers plugin/skills...');
 
   // The plugin is installed by OpenCode at startup; its exact on-disk location varies
   // (cache/data dirs), so search broadly rather than assuming ~/.config/opencode/skills.
   const fsCheck = await sandbox.process.executeCommand(
-    `find $HOME ${REPO_DIR}/.opencode -maxdepth 7 -iname '*superpower*' ` +
+    `find $HOME ${repoDir}/.opencode -maxdepth 7 -iname '*superpower*' ` +
       "-not -path '*/.git/*' 2>/dev/null | head -10",
   );
   const traces = fsCheck.result.trim();
@@ -106,11 +111,11 @@ export type OpencodeAccess = {
 };
 
 /** Full sandbox bootstrap: clone repo + OpenCode server, returns how to reach the server. */
-export async function setupOpencode(sandbox: Sandbox): Promise<OpencodeAccess> {
-  await cloneRepo(sandbox);
+export async function setupOpencode(sandbox: Sandbox, input: RunInput): Promise<OpencodeAccess> {
+  await cloneRepo(sandbox, input);
   await installOpencode(sandbox);
-  await startServer(sandbox);
-  await verifySuperpowers(sandbox);
+  await startServer(sandbox, input.repoDir);
+  await verifySuperpowers(sandbox, input.repoDir);
 
   const preview = await sandbox.getPreviewLink(OPENCODE_PORT);
   console.log(`OpenCode reachable via preview URL: ${preview.url}`);

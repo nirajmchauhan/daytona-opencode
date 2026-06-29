@@ -1,5 +1,5 @@
 import type { OpencodeClient } from '@opencode-ai/sdk';
-import { REPO_DIR, type Config } from '../config.js';
+import type { Config } from '../config.js';
 
 /** Builds a useful error string from a hey-api result (status + body). */
 function describe(res: { error?: unknown; response?: Response }): string {
@@ -16,27 +16,32 @@ export class BrainstormSession {
   private constructor(
     private readonly client: OpencodeClient,
     private readonly config: Config,
+    private readonly repoDir: string,
     readonly id: string,
   ) {}
 
   /** Creates a new OpenCode session scoped to the target repo. */
-  static async start(client: OpencodeClient, config: Config): Promise<BrainstormSession> {
+  static async start(
+    client: OpencodeClient,
+    config: Config,
+    repoDir: string,
+  ): Promise<BrainstormSession> {
     const res = await client.session.create({
-      query: { directory: REPO_DIR },
-      body: { title: 'login-flow brainstorm' },
+      query: { directory: repoDir },
+      body: { title: 'clank run' },
     });
     if (res.error || !res.data) {
       throw new Error(`Failed to create OpenCode session: ${describe(res)}`);
     }
     console.log(`OpenCode session created: ${res.data.id}`);
-    return new BrainstormSession(client, config, res.data.id);
+    return new BrainstormSession(client, config, repoDir, res.data.id);
   }
 
   /** Sends a prompt to the session and returns the assistant's text reply. */
   async prompt(text: string): Promise<string> {
     const res = await this.client.session.prompt({
       path: { id: this.id },
-      query: { directory: REPO_DIR },
+      query: { directory: this.repoDir },
       body: {
         model: this.config.model,
         parts: [{ type: 'text', text }],
@@ -73,7 +78,7 @@ export class BrainstormSession {
   async dumpMessages(): Promise<unknown> {
     const res = await this.client.session.messages({
       path: { id: this.id },
-      query: { directory: REPO_DIR },
+      query: { directory: this.repoDir },
     });
     if (res.error || !res.data) {
       throw new Error(`Failed to read session messages: ${describe(res)}`);
@@ -84,7 +89,7 @@ export class BrainstormSession {
   /** Reads a file from the repo via the OpenCode server. */
   async readFile(relPath: string): Promise<string> {
     const res = await this.client.file.read({
-      query: { directory: REPO_DIR, path: relPath },
+      query: { directory: this.repoDir, path: relPath },
     });
     if (res.error || !res.data) {
       throw new Error(`Failed to read ${relPath}: ${describe(res)}`);
